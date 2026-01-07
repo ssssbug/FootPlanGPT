@@ -1,3 +1,6 @@
+import time
+import uuid
+
 from sympy.polys.matrices.sdm import sdm_matmul
 import json
 import os.path
@@ -118,8 +121,8 @@ class PostgreSQLDocumentStore(DocumentStore):
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(user_id) REFERENCES users(id)
-            )
-            """
+            """)
+
 
         #创建概念表
         cursor.execute("""
