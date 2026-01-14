@@ -9,6 +9,9 @@ from abc import abstractmethod
 from datetime import datetime
 from typing import Any, Dict, Optional, List
 import psycopg2
+from pymilvus import MilvusClient, DataType
+from app.model.embedder import get_text_embedder, get_dimension
+
 
 class DocumentStore:
     """文档存储基类"""
@@ -411,6 +414,248 @@ class PostgreSQLDocumentStore(DocumentStore):
             self.local.connection.close()
             delattr(self.local,'connection')
             print("[OK] PostgreSQL 连接已关闭")
+
+
+class MilvusDocumentStore(DocumentStore):
+    """Milvus文档存储实现"""
+    _instances = {}
+    _initialized_dbs = set()
+
+    def __new__(cls, db_path: str = "./milvus_demo.db"):
+        abs_path = os.path.abspath(db_path)
+        if abs_path not in cls._instances:
+            instance = super(MilvusDocumentStore, cls).__new__(cls)
+            cls._instances[abs_path] = instance
+        return cls._instances[abs_path]
+
+    def __init__(self, db_path: str = "./milvus_demo.db"):
+        if hasattr(self, "_initialized"):
+            return
+        self.db_path = db_path
+        
+        # 确保目录存在
+        os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
+        
+        self.client = MilvusClient(uri=db_path)
+        
+        abs_path = os.path.abspath(db_path)
+        if abs_path not in self._initialized_dbs:
+            self._init_collection()
+            self._initialized_dbs.add(abs_path)
+            print(f"[OK] Milvus 文档存储初始化完成:{abs_path}")
+        self._initialized = True
+
+    def _init_collection(self):
+        """初始化Milvus集合"""
+        if not self.client.has_collection("memories"):
+            schema = self.client.create_schema(
+                auto_id=False,
+                enable_dynamic_field=True,
+                description="Memory Store"
+            )
+            
+            # 定义字段
+            schema.add_field(field_name="id", datatype=DataType.VARCHAR, is_primary=True, max_length=64)
+            schema.add_field(field_name="user_id", datatype=DataType.VARCHAR, max_length=64)
+            schema.add_field(field_name="content", datatype=DataType.VARCHAR, max_length=65535)
+            schema.add_field(field_name="memory_type", datatype=DataType.VARCHAR, max_length=32)
+            schema.add_field(field_name="timestamp", datatype=DataType.INT64)
+            schema.add_field(field_name="importance", datatype=DataType.FLOAT)
+            schema.add_field(field_name="properties", datatype=DataType.VARCHAR, max_length=65535) # 存JSON字符串
+            
+            # 向量字段
+            dim = get_dimension()
+            schema.add_field(field_name="vector", datatype=DataType.FLOAT_VECTOR, dim=dim)
+            
+            # 创建集合
+            index_params = self.client.prepare_index_params()
+            index_params.add_index(
+                field_name="vector",
+                index_type="FLAT", # 本地Lite通常用FLAT或IVF_FLAT
+                metric_type="COSINE"
+            )
+            
+            self.client.create_collection(
+                collection_name="memories",
+                schema=schema,
+                index_params=index_params
+            )
+            print("[OK] Milvus 集合 memories 创建完成")
+
+    def add_memory(self,
+                   memory_id: str,
+                   user_id: str,
+                   content: str,
+                   memory_type: str,
+                   timestamp: int,
+                   importance: float,
+                   properties: Dict[str, Any] = None) -> str:
+        
+        # 生成向量
+        embedder = get_text_embedder()
+        vector = embedder.encode(content)
+        if hasattr(vector, 'tolist'):
+            vector = vector.tolist()
+
+        data = {
+            "id": memory_id,
+            "user_id": user_id,
+            "content": content,
+            "memory_type": memory_type,
+            "timestamp": timestamp,
+            "importance": importance,
+            "properties": json.dumps(properties) if properties else "{}",
+            "vector": vector
+        }
+        
+        self.client.insert(collection_name="memories", data=data)
+        return memory_id
+
+    def get_memory(self, memory_id: str) -> Optional[Dict[str, Any]]:
+        res = self.client.get(
+            collection_name="memories",
+            ids=[memory_id]
+        )
+        if not res:
+            return None
+        
+        row = res[0]
+        return {
+            "memory_id": row["id"],
+            "user_id": row["user_id"],
+            "content": row["content"],
+            "memory_type": row["memory_type"],
+            "timestamp": row["timestamp"],
+            "importance": row["importance"],
+            "properties": json.loads(row["properties"]) if row.get("properties") else {},
+            "created_at": row.get("created_at") # Milvus might not have created_at unless we add it to schema or rely on dynamic field (which we enabled)
+        }
+
+    def search_memories(self,
+                        user_id: Optional[str] = None,
+                        memory_type: Optional[str] = None,
+                        start_time: Optional[str] = None,
+                        end_time: Optional[str] = None,
+                        importance_threshold: Optional[float] = None,
+                        limit: int = 10) -> List[Dict[str, Any]]:
+        
+        # Milvus 搜索通常基于向量，但这里接口只提供了标量过滤
+        # 我们可以使用 query 接口进行标量过滤
+        
+        filter_exprs = []
+        if user_id:
+            filter_exprs.append(f'user_id == "{user_id}"')
+        if memory_type:
+            filter_exprs.append(f'memory_type == "{memory_type}"')
+        if start_time:
+             # start_time 可能是字符串或int，这里假设是在比较timestamp(int)
+             # 原始docstore定义start_time: Optional[str]但Postgres用的是 timestamp >= %s. 
+             # 如果传入的是timestamp int的字符串形式
+            filter_exprs.append(f'timestamp >= {start_time}')
+        if end_time:
+            filter_exprs.append(f'timestamp <= {end_time}')
+        if importance_threshold:
+            filter_exprs.append(f'importance >= {importance_threshold}')
+            
+        filter_str = " && ".join(filter_exprs) if filter_exprs else ""
+        
+        # 注意: 如果只用filtering, query() 是合适的. output_fields=["*"]
+        res = self.client.query(
+            collection_name="memories",
+            filter=filter_str,
+            limit=limit,
+            output_fields=["id", "user_id", "content", "memory_type", "timestamp", "importance", "properties"]
+        )
+        
+        # 排序 (Milvus query 不一定保证顺序，除非在client端做, 或者通过vector search)
+        # 这里在内存中排序以模拟Postgres的 ORDER BY importance DESC, timestamp DESC
+        res.sort(key=lambda x: (x.get("importance", 0), x.get("timestamp", 0)), reverse=True)
+        
+        memories = []
+        for row in res:
+            memories.append({
+                "memory_id": row["id"],
+                "user_id": row["user_id"],
+                "content": row["content"],
+                "memory_type": row["memory_type"],
+                "timestamp": row["timestamp"],
+                "importance": row["importance"],
+                "properties": json.loads(row["properties"]) if row.get("properties") else {},
+                # created_at is missing usually
+            })
+        return memories
+
+    def update_memory(self,
+                      memory_id: str,
+                      content: str = None,
+                      importance: float = None,
+                      properties: Dict[str, Any] = None) -> bool:
+        
+        # Milvus 更新需要先获取完整对象，修改后再upsert (或者replace)
+        # 也可以用 client.upsert 如果提供了所有字段
+        
+        data = self.get_memory(memory_id)
+        if not data:
+            return False
+            
+        # Get raw data via query/get to have all fields including vector if needed?
+        # Use client.get to be sure
+        data_rows = self.client.get(collection_name="memories", ids=[memory_id])
+        if not data_rows:
+            return False
+        
+        row = data_rows[0]
+        
+        if content is not None:
+            row["content"] = content
+            # 重新生成向量
+            embedder = get_text_embedder()
+            vec = embedder.encode(content)
+            if hasattr(vec, 'tolist'):
+                vec = vec.tolist()
+            row["vector"] = vec
+            
+        if importance is not None:
+            row["importance"] = importance
+        if properties is not None:
+            row["properties"] = json.dumps(properties)
+            
+        self.client.upsert(collection_name="memories", data=[row])
+        return True
+
+    def delete_memory(self, memory_id: str) -> bool:
+        res = self.client.delete(collection_name="memories", ids=[memory_id])
+        return bool(res and res[0].get("delete_count", 0) > 0)
+
+    def get_database_stats(self) -> Dict[str, Any]:
+        stats = {}
+        # Count
+        res = self.client.query(collection_name="memories", filter="", output_fields=["count(*)"])
+        # Milvus 2.4+ count(*) syntax support varies or uses num_entities
+        count = 0
+        try:
+             # Check if stats available via describe_collection
+             coll_stats = self.client.describe_collection("memories")
+             # num_entities might be roughly accurate or need query count
+             # query count is safer if supported
+             res_count = self.client.query(collection_name="memories", filter="", output_fields=["count(*)"])
+             if res_count:
+                 count = res_count[0].get("count(*)")
+        except:
+             # fallback approximation
+             pass
+        
+        stats["memories_count"] = count
+        stats["store_type"] = "milvus"
+        stats["db_path"] = self.db_path
+        return stats
+    
+    def close(self):
+        self.client.close()
+
+
+
+        
 
 
 

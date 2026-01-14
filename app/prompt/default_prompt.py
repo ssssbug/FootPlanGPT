@@ -63,3 +63,40 @@ INTENT_PROMPT = """
 {user_input}
 """
 
+MEMORY_EXTRACTION_PROMPT = """
+你是一个知识图谱构建专家。你的任务是从用户的对话中提取出结构化的实体 (Entity) 和关系 (Relation)，以便存储到知识库中。
+
+重点关注以下领域的信息：
+1. **用户画像** (User Profile): 用户的口味偏好、忌口、过敏、健康目标（如减肥、增肌）。
+2. **食材与菜谱** (Ingredients & Recipes): 菜品包含的食材、食材的属性（季节、口感）。
+3. **评价与反馈** (Feedback): 用户对特定菜品的具体评价。
+
+请输出符合以下 JSON Schema 的数据：
+{{
+    "entities": [
+        {{
+            "id": "英文字符ID_尽量唯一_如_user_001_或_ingredient_tomato",
+            "name": "中文名称",
+            "type": "实体类型(User/Dish/Ingredient/Tag/Goal)",
+            "properties": {{ "相关属性": "值" }}
+        }}
+    ],
+    "relations": [
+        {{
+            "from": "源实体ID",
+            "to": "目标实体ID",
+            "type": "关系类型(大写英文_如_LIKES/ALLERGIC_TO/CONTAINS/HAS_TAG)",
+            "properties": {{ "reason": "关系产生的原因或上下文" }}
+        }}
+    ]
+}}
+
+**注意**:
+- 如果没有提取到有价值的新信息，lists 可以为空。
+- 实体 ID 请尽量规范化，例如用户统一用 "User"，常见食材用英文单词或拼音。
+- 只提取明确的信息，不要猜测。
+
+对话内容:
+用户: {user_input}
+助手: {agent_response}
+"""

@@ -4,7 +4,7 @@ from typing import List, Dict, Any
 
 from qdrant_client.http.models import DecayParamsExpression
 
-from app.memory.baseMemory import BaseMemory, MemoryConfig, MemoryItem
+from baseMemory import BaseMemory, MemoryConfig, MemoryItem
 
 
 class WorkingMemory(BaseMemory):

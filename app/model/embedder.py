@@ -43,7 +43,7 @@ class  LocalTransformerEmbedding(EmbeddingModel):
     self._load_backend()
 
   
-  def _locd_backend(self):
+  def _load_backend(self):
     #优先transformers
     try:
       self._hf_model = AutoModel.from_pretrained(self.model_name)
@@ -51,8 +51,8 @@ class  LocalTransformerEmbedding(EmbeddingModel):
       with torch.no_grad():
         inputs = self._hf_tokenizer("test_text",return_tensors="pt",padding=True,truncation=True)
         outputs = self._hf_model(**inputs)
-        test_embeeding = outputs.last_hidden_state.mean(dim=1)
-        self._dimension = int(test_embeeding.shape[1])
+        test_embedding = outputs.last_hidden_state.mean(dim=1)
+        self._dimension = int(test_embedding.shape[1])
 
       self._backend = "hf"
       return
@@ -87,8 +87,7 @@ class  LocalTransformerEmbedding(EmbeddingModel):
     if self._backend == "st":
       vecs = self._st_model.encode(inputs)
       if hasattr(vecs,"tolist"):
-        vecs = [v for v in vecs]
-      else:
+        vecs = vecs.tolist()
     else:
       tokenizer = self._hf_tokenizer(inputs,return_tensors = "pt",padding = True,truncation = True,max_length = 512)
       with torch.no_grad():
@@ -100,8 +99,9 @@ class  LocalTransformerEmbedding(EmbeddingModel):
     if single:
       return vecs[0]
     return vecs
-    @property
-    def dimension(self):
+
+  @property
+  def dimension(self):
       return int(self._dimension or 0)
 
 class TFIDFEmbedding(EmbeddingModel):
@@ -170,7 +170,7 @@ class DashscopeEmbedding(EmbeddingModel):
       if self.api_key:
         #将统一命名的APIKEY注入到SDK期望的位置
         os.environ["DASHSCOPE_API_KEY"] = self.api_key
-        import DashscopeEmbedding
+        import dashscope
     except ImportError:
       raise ImportError("未找到可用的Dashscope后端，请安装dashscope")
   
@@ -223,8 +223,8 @@ class DashscopeEmbedding(EmbeddingModel):
       return vecs[0]
     return vecs
 
-    @property
-    def dimension(self):
+  @property
+  def dimension(self):
       return int(self._dimension or 0)
   
 #######工厂与回退
@@ -235,7 +235,7 @@ def create_embedding_model(model_type:str="local",**kwargs):
   kwargs:model_name,api_key
   """
   if model_type in ("local","huggingface"):
-    return LocalEmbedding(**kwargs)
+    return LocalTransformerEmbedding(**kwargs)
   elif model_type == "dashscope":
     return DashscopeEmbedding(**kwargs)
   elif model_type == "tf-idf":
@@ -243,7 +243,7 @@ def create_embedding_model(model_type:str="local",**kwargs):
   else:
     raise ValueError(f"不支持的嵌入模型类型:{model_type}")
 
-def create_embedding_model_with_fallback(model_type:str="local",**kwargs):
+def create_embedding_model_with_fallback(preferred_type:str="local",**kwargs):
   """
   带回退的创建:local->dashscope->tf-idf
   """
@@ -290,20 +290,20 @@ def _build_embedder()->EmbeddingModel:
   if base_url:
     kwargs["base_url"] = base_url
   
-   return create_embedding_model_with_fallback(preferred_type=preferred,**kwargs) 
+  return create_embedding_model_with_fallback(preferred_type=preferred,**kwargs) 
 
   
 def get_text_embedder():
   """
   获取全局共享的文本嵌入实例(线程安全单例)
   """
-  global _embedder 
-  if _embedder is None:
-    return _embedder
+  global _embedding_model 
+  if _embedding_model:
+    return _embedding_model
   with _lock:
-    if _embedder is None:
-      _embedder = _build_embedder()
-    return _embedder
+    if _embedding_model is None:
+      _embedding_model = _build_embedder()
+    return _embedding_model
 
 def get_dimension(default:int=384)->int:
   """获取统一向量维度(失败回退默认值)"""
@@ -315,10 +315,11 @@ def get_dimension(default:int=384)->int:
 
 def refresh_embedder():
   """强制重建嵌入实例(可用于动态切换环境变量)"""
-  global _embedder
+  global _embedding_model
   with _lock:
-    _embedder = _build_embedder()
-    return _embedder
+    _embedding_model = _build_embedder()
+    return _embedding_model
+
     
 
   
