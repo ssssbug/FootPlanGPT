@@ -24,6 +24,22 @@ from utils.text_process import TextProcess
 #环境加载，加载llm
 load_dotenv()
 
+# RAG Pipeline import
+try:
+    from services.rag_pipeline import create_rag_pipeline
+    RAG_AVAILABLE = True
+except ImportError:
+    RAG_AVAILABLE = False
+    print("[WARNING] RAG Pipeline not available")
+
+# MCP Tools import
+try:
+    from tools import get_weather, get_ingredient_prices, get_seasonal_ingredients
+    MCP_AVAILABLE = True
+except ImportError:
+    MCP_AVAILABLE = False
+    print("[WARNING] MCP Tools not available")
+
 def generate_deterministic_id(name: str, type_str: str) -> str:
     """生成确定性ID: type_prefix + md5(name)"""
     # 规范化名称：去除空白，统一小写
@@ -59,6 +75,29 @@ class SmartMenuAgent(BaseAgent):
         
         # 初始化语义记忆
         self.semantic_memory = SemanticMemory(MemoryConfig())
+        
+        # 初始化 RAG Pipeline
+        self.rag_pipeline = None
+        if RAG_AVAILABLE:
+            try:
+                self.rag_pipeline = create_rag_pipeline(
+                    collection_name="food_recipe_kb",
+                    rag_namespace="food_kb",
+                    neo4j_enabled=True
+                )
+                print("[Agent] RAG Pipeline initialized successfully")
+            except Exception as e:
+                print(f"[Agent] RAG Pipeline initialization failed: {e}")
+                self.rag_pipeline = None
+        
+        # 初始化 MCP 工具数据
+        self.user_city = "北京"  # 默认城市，可通过用户偏好更新
+        self._weather_cache = None
+        self._ingredient_cache = None
+        self._cache_time = None
+        
+        if MCP_AVAILABLE:
+            print("[Agent] MCP Tools available")
 
     def learn_from_interaction(self, user_input: str, agent_response: str):
         """
@@ -150,6 +189,137 @@ class SmartMenuAgent(BaseAgent):
             traceback.print_exc()
             print(f"[Learning] 学习过程发生错误: {e}")
 
+    def _retrieve_rag_context(self, query: str, top_k: int = 3) -> str:
+        """
+        从 RAG 知识库检索相关上下文
+        """
+        if not self.rag_pipeline:
+            return "(知识库未初始化)"
+        
+        try:
+            results = self.rag_pipeline["search"](query, top_k=top_k)
+            if not results:
+                return "(未找到相关知识)"
+            
+            # 格式化检索结果
+            context_parts = []
+            for i, r in enumerate(results, 1):
+                content = r.get("content", r.get("text", ""))
+                source = r.get("metadata", {}).get("source_path", "未知来源")
+                # 截取前500字符避免过长
+                if len(content) > 500:
+                    content = content[:500] + "..."
+                context_parts.append(f"[{i}] {content}\n   来源: {source}")
+            
+            return "\n\n".join(context_parts)
+        except Exception as e:
+            print(f"[RAG] Search error: {e}")
+            return "(检索失败)"
+
+    def _get_weather_context(self) -> str:
+        """
+        获取天气预报上下文
+        """
+        if not MCP_AVAILABLE:
+            return "(天气服务未启用)"
+        
+        try:
+            # 使用缓存避免频繁调用
+            from datetime import datetime, timedelta
+            now = datetime.now()
+            
+            if self._weather_cache and self._cache_time:
+                # 缓存 1 小时有效
+                if now - self._cache_time < timedelta(hours=1):
+                    return self._weather_cache
+            
+            # 调用天气工具
+            weather_data = get_weather(self.user_city, days=7)
+            
+            if "error" in weather_data:
+                return f"(天气查询失败: {weather_data['error']})"
+            
+            # 格式化天气信息
+            lines = [f"城市: {weather_data.get('city', self.user_city)}"]
+            lines.append(f"数据来源: {weather_data.get('source', '未知')}")
+            lines.append("")
+            
+            for forecast in weather_data.get("forecasts", []):
+                date = forecast.get("date", "")
+                day_weather = forecast.get("day_weather", "")
+                temp_max = forecast.get("temp_max", "?")
+                temp_min = forecast.get("temp_min", "?")
+                suggestion = forecast.get("suggestion", "")
+                
+                lines.append(f"- {date}: {day_weather}, {temp_min}~{temp_max}°C")
+                if suggestion:
+                    lines.append(f"  建议: {suggestion}")
+            
+            result = "\n".join(lines)
+            
+            # 更新缓存
+            self._weather_cache = result
+            self._cache_time = now
+            
+            return result
+            
+        except Exception as e:
+            print(f"[MCP] Weather error: {e}")
+            return "(天气服务异常)"
+
+    def _get_ingredient_context(self) -> str:
+        """
+        获取当季食材价格上下文
+        """
+        if not MCP_AVAILABLE:
+            return "(食材价格服务未启用)"
+        
+        try:
+            # 获取当季推荐食材
+            price_data = get_seasonal_ingredients()
+            
+            if "error" in price_data:
+                return f"(价格查询失败: {price_data['error']})"
+            
+            # 格式化价格信息
+            lines = [
+                f"当前季节: {price_data.get('season', '未知')}",
+                f"数据来源: {price_data.get('source', '未知')}",
+                "",
+                price_data.get("seasonal_tips", ""),
+                "",
+                "当季推荐食材 (性价比高):"
+            ]
+            
+            # 按类别分组显示
+            categories = {}
+            for item in price_data.get("prices", []):
+                cat = item.get("category", "other")
+                if cat not in categories:
+                    categories[cat] = []
+                categories[cat].append(item)
+            
+            cat_names = {
+                "vegetable": "蔬菜",
+                "meat": "肉类", 
+                "seafood": "海鲜",
+                "egg": "蛋奶",
+                "staple": "主食",
+                "other": "其他"
+            }
+            
+            for cat, items in categories.items():
+                if items:
+                    cat_name = cat_names.get(cat, cat)
+                    item_strs = [f"{i['name']}({i['price']}元/斤)" for i in items[:5]]
+                    lines.append(f"  {cat_name}: {', '.join(item_strs)}")
+            
+            return "\n".join(lines)
+            
+        except Exception as e:
+            print(f"[MCP] Ingredient price error: {e}")
+            return "(食材价格服务异常)"
+
     ##进行交互的话只执行单步
     def step(self,input_text:str,finish=False,current_step=0,workmemories=None,**kwargs):
         print(f"\n---------第{current_step}步-------\n")
@@ -190,7 +360,13 @@ class SmartMenuAgent(BaseAgent):
             print(f"语义增强: 检索到 {len(semantic_context)} 条相关图谱知识")
         # ------------------
 
-        prompt = self.prompt_template.format(question=input_text, history=history_str)
+        prompt = self.prompt_template.format(
+            question=input_text, 
+            history=history_str,
+            weather_context=self._get_weather_context(),
+            ingredient_context=self._get_ingredient_context(),
+            rag_context=self._retrieve_rag_context(input_text)
+        )
 
         # 2调用大模型
         messages = [{"role": "user", "content": prompt}]
@@ -213,7 +389,16 @@ class SmartMenuAgent(BaseAgent):
 
             #1.构建提示词
             history_str="\n".join(self.current_history)
-            prompt = self.prompt_template.format(question=input_text,history=history_str)
+            rag_context = self._retrieve_rag_context(input_text)
+            weather_context = self._get_weather_context()
+            ingredient_context = self._get_ingredient_context()
+            prompt = self.prompt_template.format(
+                question=input_text,
+                history=history_str,
+                weather_context=weather_context,
+                ingredient_context=ingredient_context,
+                rag_context=rag_context
+            )
 
             #2调用大模型
             messages = [{"role":"user","content":prompt}]

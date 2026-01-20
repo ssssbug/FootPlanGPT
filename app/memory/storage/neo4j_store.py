@@ -420,3 +420,41 @@ class Neo4jGraphStore:
                 self.driver.close()
             except:
                 pass
+
+
+class Neo4jConnectionManager:
+    """Singleton manager for Neo4j connection"""
+    _instance = None
+    _lock = None
+    
+    @classmethod
+    def get_instance(cls, 
+                     uri: str = None, 
+                     username: str = "neo4j", 
+                     password: str = "hello-agents-password",
+                     database_name: str = "neo4j") -> 'Neo4jGraphStore':
+        import threading
+        if cls._lock is None:
+            cls._lock = threading.Lock()
+            
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    import os
+                    final_uri = uri or os.getenv("NEO4J_URI", "bolt://localhost:7687")
+                    final_user = username or os.getenv("NEO4J_USERNAME", "neo4j")
+                    final_pwd = password or os.getenv("NEO4J_PASSWORD", "hello-agents-password")
+                    final_db = database_name or os.getenv("NEO4J_DATABASE", "neo4j")
+                    
+                    try:
+                        cls._instance = Neo4jGraphStore(
+                            uri=final_uri,
+                            username=final_user,
+                            password=final_pwd,
+                            database_name=final_db
+                        )
+                        logger.info("Neo4jConnectionManager initialized")
+                    except Exception as e:
+                        logger.error(f"Failed to initialize Neo4jConnectionManager: {e}")
+                        return None
+        return cls._instance
