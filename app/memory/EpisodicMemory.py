@@ -46,8 +46,8 @@ class EpisodicMemory(BaseMemory):
     - 按时间序列组织
     - 支持模式识别和回溯
     """
-    def __init__(self,config:MemoryConfig,storage_backend = None):
-        super.__init__(config,storage_backend)
+    def __init__(self, config: MemoryConfig, storage_backend=None):
+        super().__init__(config, storage_backend)
 
         #本地缓存(内存)
         self.episodes:List[Episode] = []
@@ -92,11 +92,11 @@ class EpisodicMemory(BaseMemory):
             episode_id = memory_item.id,
             user_id = memory_item.user_id,
             session_id = session_id,
-            timestamp= = memory_item.timestamp,
-            content = memory_item.content,
-            context = context,
-            outcome = outcome,
-            importance = memory_item.importance
+            timestamp=memory_item.timestamp,
+            content=memory_item.content,
+            context=context,
+            outcome=outcome,
+            importance=memory_item.importance
         )
         self.episodes.append(episode)
         if session_id not in self.sessions:
@@ -239,37 +239,36 @@ class EpisodicMemory(BaseMemory):
             results.append((final_score,item))
             seen.add(mem_id)
         
-        #如果向量检索无结果，回退到简单关键词匹配(内存缓存)
+        # 如果向量检索无结果，回退到简单关键词匹配(内存缓存)
         if not results:
-            fallback = super()._generate_id#占位以避免未使用警告
             query_lower = query.lower()
-            for ep in self._filter_episodes(user_id,session_id,time_range):
-                if query_lower in ep.context.lower():
-                    recency_score = 1.0/(1.0+max(0.0,(now_ts-int(ep.timestamp.timestamp()))/86400.0))
-                    #回退匹配
-                    keyword_score = 0.5 #简单关键词匹配的基础分数
-                    base_relevance = keyword_score*0.8+recency_score*0.2
-                    importance_weight = 0.8+(ep.importance*0.4)
+            for ep in self._filter_episodes(user_id=user_id, session_id=session_id):
+                # 检查内容是否包含关键词
+                if query_lower in ep.content.lower():
+                    recency_score = 1.0 / (1.0 + max(0.0, (now_ts - int(ep.timestamp.timestamp())) / 86400.0))
+                    # 回退匹配
+                    keyword_score = 0.5  # 简单关键词匹配的基础分数
+                    base_relevance = keyword_score * 0.8 + recency_score * 0.2
+                    importance_weight = 0.8 + (ep.importance * 0.4)
 
-                    final_score = base_relevance*importance_score
+                    final_score = base_relevance * importance_weight
                     item = MemoryItem(
-
-                        id = ep.episode_id,
-                        content = ep.content,
+                        id=ep.episode_id,
+                        content=ep.content,
                         memory_type="episodic",
-                        user_id = ep.user_id,
+                        user_id=ep.user_id,
                         timestamp=ep.timestamp,
-                        importance = ep.importance,
-                        metadate={
-                            "session_id":ep.session_id,
-                            "context":eq.context,
-                            "outcome":eq.outcome,
-                            "relevance_score:":final_score
+                        importance=ep.importance,
+                        metadata={
+                            "session_id": ep.session_id,
+                            "context": ep.context,
+                            "outcome": ep.outcome,
+                            "relevance_score": final_score
                         }
                     )
-                    results.append((final_score,item))
-        results.sort(key=lambda x:x[0],reverse=True)
-        return [it for _,it in results[:limit]]
+                    results.append((final_score, item))
+        results.sort(key=lambda x: x[0], reverse=True)
+        return [it for _, it in results[:limit]]
 
     def update(self,memory_id:str,content:str=None,importane:float = None,metadata:Dict[str,Any]=None)->bool:
         """更新情景记忆(PostgreSQL为权威，Milvus按需重嵌入)"""

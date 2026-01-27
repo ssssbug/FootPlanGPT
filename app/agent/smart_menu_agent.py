@@ -14,10 +14,11 @@ from agent.agent import Agent
 from agent.baseAgent import BaseAgent
 from llm.select_llm import LLM
 from memory.WorkingMemory import WorkingMemory
+from memory.EpisodicMemory import EpisodicMemory # Added EpisodicMemory
 from memory.baseMemory import MemoryItem, MemoryConfig
 from memory.Semantic import SemanticMemory, Entity, Relation # Import Entity/Relation
 from message.message import Message
-from prompt.default_prompt import DEFAULT_REACT_TEMPLATE, INTENT_PROMPT, MEMORY_EXTRACTION_PROMPT # Added Prompt
+from prompt.default_prompt import DEFAULT_REACT_TEMPLATE, INTENT_PROMPT, MEMORY_EXTRACTION_PROMPT, REFLECTION_PROMPT # Added Prompt
 from schemas.AgentState import AgentState
 from utils.text_process import SessionUserId
 from utils.text_process import TextProcess
@@ -75,6 +76,12 @@ class SmartMenuAgent(BaseAgent):
         
         # 初始化语义记忆
         self.semantic_memory = SemanticMemory(MemoryConfig())
+        
+        # 初始化情景记忆
+        self.episodic_memory = EpisodicMemory(MemoryConfig())
+        
+        # 记录交互轮数用于触发反思
+        self.turn_count = 0
         
         # 初始化 RAG Pipeline
         self.rag_pipeline = None
@@ -188,6 +195,37 @@ class SmartMenuAgent(BaseAgent):
             import traceback
             traceback.print_exc()
             print(f"[Learning] 学习过程发生错误: {e}")
+
+    def reflect_and_consolidate(self, user_id: str):
+        """
+        [自我反思任务] 
+        1. 检索最近的情景记忆
+        2. 由 LLM 总结出稳定的用户偏好和知识
+        3. 将总结结果存入语义记忆（图谱）
+        """
+        print(f"\n[Reflection] 正在对用户 {user_id} 的近期表现进行深度反思...")
+        
+        # 1. 获取最近 10 条交互记录
+        recent_episodes = self.episodic_memory.get_timeline(user_id=user_id, Limit=10)
+        if len(recent_episodes) < 3:
+            print("[Reflection] 记忆不足，暂不执行反思")
+            return
+
+        episode_texts = [f"- {e['timestamp']}: {e['content']}" for e in recent_episodes]
+        context_str = "\n".join(episode_texts)
+
+        # 2. 调用 LLM 进行反思
+        prompt = REFLECTION_PROMPT.format(context=context_str)
+        try:
+            messages = [{"role": "user", "content": prompt}]
+            response = self.llm.invoke(messages)
+            
+            # 清洗并通过与 learn_from_interaction 类似的逻辑入库
+            # 这里简化处理，直接复用提取逻辑的解析部分
+            self.learn_from_interaction("Reflection Context", response)
+            print("[Reflection] 反思完成，已将洞察固化到语义图谱")
+        except Exception as e:
+            print(f"[Reflection] 反思失败: {e}")
 
     def _retrieve_rag_context(self, query: str, top_k: int = 3) -> str:
         """
@@ -314,7 +352,7 @@ class SmartMenuAgent(BaseAgent):
                     item_strs = [f"{i['name']}({i['price']}元/斤)" for i in items[:5]]
                     lines.append(f"  {cat_name}: {', '.join(item_strs)}")
             
-            return "\n".join(lines)
+            return "\n".join(lines) 
             
         except Exception as e:
             print(f"[MCP] Ingredient price error: {e}")
@@ -355,17 +393,32 @@ class SmartMenuAgent(BaseAgent):
                                 rel_strs.append(f"{rel_type} {target}")
                             semantic_context.append(rel_desc + ", ".join(rel_strs))
         
-        if semantic_context:
-            history_str += "\n[Semantic Context]:\n" + "\n".join(semantic_context)
-            print(f"语义增强: 检索到 {len(semantic_context)} 条相关图谱知识")
+        # --- 情景记忆检索 ---
+        episodic_context = []
+        try:
+            # 搜索与当前问题相关的历史瞬间
+            episodes = self.episodic_memory.retrieve(input_text, user_id=self.sessionuserid.user_id, limit=3)
+            if episodes:
+                episodic_context.append("你回忆起之前的零散对话:")
+                for e in episodes:
+                    episodic_context.append(f"- 在 {e.timestamp.strftime('%Y-%m-%d %H:%M')}: {e.content}")
+        except Exception as e:
+            print(f"[Episodic] Retrieve error: {e}")
+
+        if episodic_context:
+            history_str += "\n[Episodic Context]:\n" + "\n".join(episodic_context)
+            print(f"情景增强: 检索到 {len(episodes)} 个相关历史瞬间")
         # ------------------
+
+        # 3. 实时 RAG 检索
+        rag_context = self._retrieve_rag_context(input_text)
 
         prompt = self.prompt_template.format(
             question=input_text, 
             history=history_str,
             weather_context=self._get_weather_context(),
             ingredient_context=self._get_ingredient_context(),
-            rag_context=self._retrieve_rag_context(input_text)
+            rag_context=rag_context
         )
 
         # 2调用大模型
@@ -482,16 +535,44 @@ class SmartMenuAgent(BaseAgent):
             if action.lower()=="continue":
                 print(thought)
                 user_input_implement=input("请补全上述信息").strip()
+                
+                # 记录情景记忆
+                self.episodic_memory.add(MemoryItem(
+                    id=str(uuid.uuid4()),
+                    user_id=user_id,
+                    content=f"User: {user_input} -> Assistant: {thought} -> User Complement: {user_input_implement}",
+                    importance=0.5,
+                    metadata={"session_id": "cli_session", "type": "interaction"}
+                ))
+                
                 user_input = user_input_implement # 更新user_input供下一轮学习使用
                 
                 self.current_history.append(f"User:{user_input_implement}")
                 self.workmemory.add(textprocess.content_to_memory(text=f"User:{user_input},Assistant:{thought},User_Implements:{user_input_implement}",user_id=user_id))
                 self.add_message(Message(content=user_input_implement,role="user"))
                 current_step+=1
+                
+                # 检查是否触发反思 (每3轮触发一次，演示用)
+                self.turn_count += 1
+                if self.turn_count % 3 == 0:
+                    self.reflect_and_consolidate(user_id)
+                
                 continue
             else:
+                # 记录情景记忆 (最终回复)
+                self.episodic_memory.add(MemoryItem(
+                    id=str(uuid.uuid4()),
+                    user_id=user_id,
+                    content=f"User: {user_input} -> Assistant: {thought}",
+                    importance=0.6,
+                    metadata={"session_id": "cli_session", "type": "final_interaction"}
+                ))
+                
                 self.workmemory.add(textprocess.content_to_memory(text=f"User:{user_input},Assistant:{thought}",user_id=user_id))
                 print(thought)
+                
+                # 结束时也执行一次反思
+                self.reflect_and_consolidate(user_id)
                 break
 
 
