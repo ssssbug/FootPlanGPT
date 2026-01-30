@@ -14,7 +14,7 @@
 """
 
 
-from requests.api import request
+
 from typing import Union
 from transformers import AutoModel,AutoTokenizer
 import torch

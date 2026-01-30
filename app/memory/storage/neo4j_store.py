@@ -1,7 +1,10 @@
+from dotenv import load_dotenv
+from _pickle import load
+from typing import Optional
 from typing import List, Dict, Any
 from datetime import datetime
 import logging
-
+import os
 try:
     from neo4j import GraphDatabase
     from neo4j.exceptions import ServiceUnavailable, AuthError
@@ -16,10 +19,10 @@ logger = logging.getLogger(__name__)
 class Neo4jGraphStore:
     """Neo4j图数据库存储实现"""
 
-    def __init__(self, uri: str = "bolt://localhost:7687",
-                 username: str = "neo4j",
-                 password: str = "hello-agents-password",
-                 database_name: str = "neo4j",
+    def __init__(self, uri: str = Optional[str]=None,
+                 username: str = Optional[str]=None,
+                 password: str = Optional[str]=None,
+                 database_name: str = Optional[str]=None,
                  max_connection_pool_size: int = 3600,
                  max_connection_lifetime: int = 50,
                  connection_acquisition_timeout: int = 60,
@@ -429,10 +432,10 @@ class Neo4jConnectionManager:
     
     @classmethod
     def get_instance(cls, 
-                     uri: str = None, 
-                     username: str = "neo4j", 
-                     password: str = "hello-agents-password",
-                     database_name: str = "neo4j") -> 'Neo4jGraphStore':
+                     uri: Optional[str] = None, 
+                     username: Optional[str] = None, 
+                     password: Optional[str] = None,
+                     database_name: Optional[str] = None) -> 'Neo4jGraphStore':
         import threading
         if cls._lock is None:
             cls._lock = threading.Lock()
@@ -441,10 +444,11 @@ class Neo4jConnectionManager:
             with cls._lock:
                 if cls._instance is None:
                     import os
-                    final_uri = uri or os.getenv("NEO4J_URI", "bolt://localhost:7687")
-                    final_user = username or os.getenv("NEO4J_USERNAME", "neo4j")
-                    final_pwd = password or os.getenv("NEO4J_PASSWORD", "hello-agents-password")
-                    final_db = database_name or os.getenv("NEO4J_DATABASE", "neo4j")
+            
+                    final_uri = uri or os.getenv("NEO4J_URI", "")
+                    final_user = username or os.getenv("NEO4J_USER", "")
+                    final_pwd = password or os.getenv("NEO4J_PASSWORD", "")
+                    final_db = database_name or os.getenv("NEO4J_DATABASE", "")
                     
                     try:
                         cls._instance = Neo4jGraphStore(
@@ -458,3 +462,16 @@ class Neo4jConnectionManager:
                         logger.error(f"Failed to initialize Neo4jConnectionManager: {e}")
                         return None
         return cls._instance
+
+# load_dotenv()
+# if __name__ == "__main__":
+#     # print("CWD:", os.getcwd())
+#     # final_uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
+#     # print(final_uri)
+#     manager = Neo4jConnectionManager.get_instance()
+#     if manager:
+#         print("Neo4jConnectionManager initialized successfully")
+#     manager.health_check()
+#     result=manager.add_entity(12,"test","test")
+#     if result:
+#         print("Entity added successfully")
