@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FoodPlanGPT — 韩晗的智能一周食谱</title>
+  <meta name="description" content="基于 AI 的个性化一周食谱生成器，结合天气、时令食材与用户偏好" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-dark: #0d1117;
+      --bg-card: #161b22;
+      --bg-card2: #1e2530;
+      --accent: #58a6ff;
+      --accent2: #56d364;
+      --accent3: #f85149;
+      --accent-warm: #f0883e;
+      --text-primary: #e6edf3;
+      --text-secondary: #8b949e;
+      --border: #30363d;
+      --gradient-main: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      --gradient-warm: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      --gradient-green: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Outfit', sans-serif;
+      background: var(--bg-dark);
+      color: var(--text-primary);
+      min-height: 100vh;
+    }
+
+    /* ===== 顶部导航 ===== */
+    header {
+      background: rgba(22, 27, 34, 0.85);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 32px;
+      position: sticky; top: 0; z-index: 100;
+      display: flex; align-items: center; justify-content: space-between;
+      height: 60px;
+    }
+    .logo {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 1.2rem; font-weight: 700;
+      background: var(--gradient-main);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .logo span { font-size: 1.4rem; }
+    nav { display: flex; gap: 8px; }
+    nav button {
+      background: none; border: none; cursor: pointer;
+      color: var(--text-secondary); font-family: 'Outfit', sans-serif;
+      font-size: 0.9rem; padding: 6px 14px; border-radius: 8px;
+      transition: all 0.2s;
+    }
+    nav button:hover, nav button.active {
+      background: var(--bg-card2); color: var(--text-primary);
+    }
+    .status-dot {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 0.78rem; color: var(--text-secondary);
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent2);
+      animation: pulse 2s infinite; }
+    @keyframes pulse {
+      0%,100% { opacity: 1; } 50% { opacity: 0.4; }
+    }
+
+    /* ===== 主体布局 ===== */
+    main { max-width: 1280px; margin: 0 auto; padding: 32px 24px; }
+    .page { display: none; }
+    .page.active { display: block; }
+
+    /* ===== 首页 Hero ===== */
+    .hero {
+      text-align: center; padding: 60px 0 40px;
+    }
+    .hero h1 {
+      font-size: clamp(2rem, 5vw, 3.5rem); font-weight: 700; line-height: 1.2;
+      background: linear-gradient(135deg, #58a6ff, #56d364, #f0883e);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      margin-bottom: 16px;
+    }
+    .hero p { font-size: 1.1rem; color: var(--text-secondary); max-width: 560px; margin: 0 auto 40px; }
+    .hero-actions { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+    .btn-primary {
+      background: var(--gradient-main); border: none; cursor: pointer;
+      color: white; font-family: 'Outfit', sans-serif; font-size: 1rem;
+      font-weight: 600; padding: 14px 32px; border-radius: 12px;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(88, 166, 255, 0.3); }
+    .btn-secondary {
+      background: var(--bg-card); border: 1px solid var(--border); cursor: pointer;
+      color: var(--text-primary); font-family: 'Outfit', sans-serif; font-size: 1rem;
+      font-weight: 500; padding: 14px 32px; border-radius: 12px;
+      transition: all 0.2s;
+    }
+    .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ===== 卡片网格 ===== */
+    .grid { display: grid; gap: 20px; }
+    .grid-3 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+    .grid-2 { grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); }
+    .card {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 16px; padding: 24px;
+      transition: border-color 0.2s, transform 0.2s;
+    }
+    .card:hover { border-color: var(--accent); transform: translateY(-2px); }
+    .card-icon { font-size: 2rem; margin-bottom: 12px; }
+    .card h3 { font-size: 1rem; font-weight: 600; margin-bottom: 8px; }
+    .card p { font-size: 0.875rem; color: var(--text-secondary); line-height: 1.6; }
+
+    /* ===== 标签页内区域标题 ===== */
+    .section-title {
+      font-size: 1.4rem; font-weight: 600; margin-bottom: 24px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .badge {
+      background: var(--bg-card2); border: 1px solid var(--border);
+      border-radius: 20px; padding: 2px 10px; font-size: 0.75rem;
+      color: var(--text-secondary);
+    }
+
+    /* ===== 天气区域 ===== */
+    #weather-grid { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 8px; }
+    .weather-card {
+      min-width: 120px; background: var(--bg-card2); border: 1px solid var(--border);
+      border-radius: 12px; padding: 16px; text-align: center; flex-shrink: 0;
+      transition: border-color 0.2s;
+    }
+    .weather-card:hover { border-color: var(--accent); }
+    .weather-card .date { font-size: 0.75rem; color: var(--text-secondary); }
+    .weather-card .icon { font-size: 2rem; margin: 8px 0; }
+    .weather-card .temp { font-size: 0.875rem; font-weight: 600; }
+    .weather-card .desc { font-size: 0.75rem; color: var(--text-secondary); margin-top: 4px; }
+
+    /* ===== 食材价格 ===== */
+    .ingredient-list { display: flex; flex-wrap: wrap; gap: 10px; }
+    .ingredient-tag {
+      background: var(--bg-card2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 8px 14px;
+      display: flex; align-items: center; gap: 8px; font-size: 0.875rem;
+    }
+    .ingredient-tag .price { color: var(--accent2); font-weight: 600; }
+    .ingredient-tag .trend { font-size: 0.75rem; }
+
+    /* ===== 聊天界面 ===== */
+    .chat-layout { display: grid; grid-template-columns: 1fr 300px; gap: 20px; height: calc(100vh - 200px); min-height: 500px; }
+    @media (max-width: 900px) { .chat-layout { grid-template-columns: 1fr; } .chat-sidebar { display: none; } }
+    .chat-container {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 16px; display: flex; flex-direction: column;
+    }
+    .chat-header {
+      padding: 16px 20px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .chat-header h3 { font-size: 1rem; font-weight: 600; }
+    .session-id { font-size: 0.72rem; color: var(--text-secondary); font-family: monospace; }
+    .chat-messages {
+      flex: 1; overflow-y: auto; padding: 20px;
+      display: flex; flex-direction: column; gap: 16px;
+    }
+    .msg { max-width: 80%; display: flex; flex-direction: column; gap: 4px; }
+    .msg.user { align-self: flex-end; align-items: flex-end; }
+    .msg.assistant { align-self: flex-start; }
+    .msg-bubble {
+      padding: 12px 16px; border-radius: 16px;
+      font-size: 0.9rem; line-height: 1.6; white-space: pre-wrap;
+    }
+    .msg.user .msg-bubble { background: var(--gradient-main); color: white; border-bottom-right-radius: 4px; }
+    .msg.assistant .msg-bubble { background: var(--bg-card2); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+    .msg-time { font-size: 0.7rem; color: var(--text-secondary); }
+    .typing-indicator { display: flex; gap: 4px; padding: 12px 16px; }
+    .typing-indicator span {
+      width: 8px; height: 8px; background: var(--text-secondary); border-radius: 50%;
+      animation: bounce 1.4s infinite ease-in-out;
+    }
+    .typing-indicator span:nth-child(2) { animation-delay: 0.16s; }
+    .typing-indicator span:nth-child(3) { animation-delay: 0.32s; }
+    @keyframes bounce { 0%,80%,100% { transform: scale(0); } 40% { transform: scale(1); } }
+    .chat-input-area {
+      padding: 16px 20px; border-top: 1px solid var(--border);
+      display: flex; gap: 10px;
+    }
+    .chat-input {
+      flex: 1; background: var(--bg-dark); border: 1px solid var(--border);
+      border-radius: 10px; padding: 12px 16px; color: var(--text-primary);
+      font-family: 'Outfit', sans-serif; font-size: 0.9rem; resize: none;
+      outline: none; transition: border-color 0.2s;
+    }
+    .chat-input:focus { border-color: var(--accent); }
+    .chat-send {
+      background: var(--gradient-main); border: none; cursor: pointer;
+      color: white; border-radius: 10px; padding: 12px 20px;
+      font-size: 1.1rem; transition: transform 0.2s;
+    }
+    .chat-send:hover { transform: scale(1.05); }
+    .chat-send:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .chat-sidebar {
+      display: flex; flex-direction: column; gap: 16px;
+    }
+    .sidebar-card {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 16px;
+    }
+    .sidebar-card h4 { font-size: 0.875rem; font-weight: 600; margin-bottom: 12px; color: var(--text-secondary); }
+    .city-input {
+      width: 100%; background: var(--bg-dark); border: 1px solid var(--border);
+      border-radius: 8px; padding: 8px 12px; color: var(--text-primary);
+      font-family: 'Outfit', sans-serif; font-size: 0.875rem; outline: none;
+    }
+    .quick-questions { display: flex; flex-direction: column; gap: 6px; }
+    .quick-q {
+      background: var(--bg-card2); border: 1px solid var(--border); border-radius: 8px;
+      padding: 8px 12px; font-size: 0.8rem; color: var(--text-secondary);
+      cursor: pointer; transition: all 0.2s; text-align: left;
+    }
+    .quick-q:hover { border-color: var(--accent); color: var(--accent-warm); }
+
+    /* ===== 食谱生成 ===== */
+    .generate-form { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 28px; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+    @media (max-width: 600px) { .form-row { grid-template-columns: 1fr; } }
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+    .form-label { font-size: 0.8rem; color: var(--text-secondary); }
+    .form-input, .form-select {
+      background: var(--bg-dark); border: 1px solid var(--border); border-radius: 8px;
+      padding: 10px 14px; color: var(--text-primary);
+      font-family: 'Outfit', sans-serif; font-size: 0.9rem; outline: none;
+      transition: border-color 0.2s;
+    }
+    .form-input:focus, .form-select:focus { border-color: var(--accent); }
+    .form-select option { background: var(--bg-card); }
+    .tag-selector { display: flex; flex-wrap: wrap; gap: 8px; }
+    .tag-btn {
+      background: var(--bg-card2); border: 1px solid var(--border); border-radius: 6px;
+      padding: 5px 12px; font-size: 0.8rem; cursor: pointer; color: var(--text-secondary);
+      transition: all 0.2s;
+    }
+    .tag-btn.selected { background: rgba(88, 166, 255, 0.15); border-color: var(--accent); color: var(--accent); }
+    .result-area {
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px;
+      padding: 24px; margin-top: 20px; white-space: pre-wrap; line-height: 1.8;
+      font-size: 0.9rem; display: none;
+    }
+    .result-area.show { display: block; }
+    .result-meta {
+      display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px;
+      padding-bottom: 16px; border-bottom: 1px solid var(--border);
+    }
+    .meta-item { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--text-secondary); }
+    .meta-val { color: var(--text-primary); font-weight: 500; }
+
+    /* ===== 加载 & Toast ===== */
+    .loading {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-size: 0.875rem; color: var(--text-secondary);
+    }
+    .spinner {
+      width: 16px; height: 16px; border: 2px solid var(--border);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #toast {
+      position: fixed; bottom: 32px; right: 32px;
+      background: var(--bg-card2); border: 1px solid var(--border);
+      border-radius: 12px; padding: 12px 20px; font-size: 0.875rem;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      transform: translateY(80px); opacity: 0; transition: all 0.3s;
+      z-index: 999;
+    }
+    #toast.show { transform: translateY(0); opacity: 1; }
+    #toast.success { border-color: var(--accent2); }
+    #toast.error { border-color: var(--accent3); }
+
+    /* ===== API 文档页 ===== */
+    .api-endpoint {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 12px; margin-bottom: 12px; overflow: hidden;
+    }
+    .api-header {
+      display: flex; align-items: center; gap: 12px; padding: 14px 20px;
+      cursor: pointer; transition: background 0.2s;
+    }
+    .api-header:hover { background: var(--bg-card2); }
+    .method {
+      font-size: 0.75rem; font-weight: 700; padding: 3px 10px; border-radius: 6px;
+      letter-spacing: 0.05em;
+    }
+    .method.GET { background: rgba(86, 211, 100, 0.15); color: var(--accent2); }
+    .method.POST { background: rgba(88, 166, 255, 0.15); color: var(--accent); }
+    .method.DELETE { background: rgba(248, 81, 73, 0.15); color: var(--accent3); }
+    .api-path { font-family: monospace; font-size: 0.9rem; }
+    .api-desc { margin-left: auto; font-size: 0.8rem; color: var(--text-secondary); }
+    .api-body { padding: 0 20px 16px; display: none; border-top: 1px solid var(--border); }
+    .api-body.open { display: block; }
+    pre {
+      background: var(--bg-dark); border-radius: 8px; padding: 14px;
+      font-size: 0.8rem; overflow-x: auto; margin-top: 10px; line-height: 1.6;
+      color: #b3f1b5;
+    }
+    .api-tryit {
+      display: flex; gap: 8px; margin-top: 12px; align-items: flex-end;
+    }
+    .api-try-btn {
+      background: var(--accent); border: none; color: var(--bg-dark); cursor: pointer;
+      border-radius: 8px; padding: 8px 16px; font-weight: 600; font-size: 0.8rem;
+      font-family: 'Outfit', sans-serif; transition: opacity 0.2s;
+    }
+    .api-try-btn:hover { opacity: 0.85; }
+    .api-result { margin-top: 10px; }
+
+    /* ===== 滚动条美化 ===== */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg-dark); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><span>🍱</span> FoodPlanGPT</div>
+  <nav>
+    <button class="active" onclick="showPage('home', this)" id="nav-home">首页</button>
+    <button onclick="showPage('chat', this)" id="nav-chat">AI 对话</button>
+    <button onclick="showPage('generate', this)" id="nav-generate">生成食谱</button>
+    <button onclick="showPage('context', this)" id="nav-context">天气食材</button>
+    <button onclick="showPage('api', this)" id="nav-api">API 文档</button>
+  </nav>
+  <div class="status-dot">
+    <span class="dot" id="status-dot"></span>
+    <span id="status-text">检测中...</span>
+  </div>
+</header>
+
+<main>
+  <!-- ===== 首页 ===== -->
+  <div class="page active" id="page-home">
+    <div class="hero">
+      <h1>你的专属 AI 营养师</h1>
+      <p>结合实时天气、时令食材与你的饮食偏好，每周为你生成科学、美味的个性化食谱。</p>
+      <div class="hero-actions">
+        <button class="btn-primary" onclick="showPage('chat', document.getElementById('nav-chat'))">💬 开始对话</button>
+        <button class="btn-secondary" onclick="showPage('generate', document.getElementById('nav-generate'))">📋 快速生成</button>
+      </div>
+    </div>
+    <div class="grid grid-3" style="margin-top:16px">
+      <div class="card">
+        <div class="card-icon">🌤️</div>
+        <h3>实时天气感知</h3>
+        <p>根据你所在城市未来一周天气，推荐适应气候的食谱——寒冷天气多炖汤，炎夏则清淡解暑。</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">🥦</div>
+        <h3>时令食材优先</h3>
+        <p>基于当月时令，推荐性价比高的当季蔬菜与食材，既美味营养又经济实惠。</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">🧠</div>
+        <h3>记忆式学习</h3>
+        <p>Agent 会记住你的饮食偏好、过敏信息和健康目标，随着对话越来越了解你。</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">📚</div>
+        <h3>营养知识库</h3>
+        <p>内置 RAG 知识库，检索专业营养学知识，确保推荐的食谱科学合理。</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">🔄</div>
+        <h3>自我反思进化</h3>
+        <p>每隔几轮对话，Agent 会总结你的偏好并存入知识图谱，持续优化推荐质量。</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">⚡</div>
+        <h3>快速 API</h3>
+        <p>完整的 RESTful API，支持天气查询、食材价格、食谱生成等独立调用。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== AI 对话 ===== -->
+  <div class="page" id="page-chat">
+    <div class="chat-layout">
+      <div class="chat-container">
+        <div class="chat-header">
+          <div>
+            <h3>🤖 SmartMenuAgent</h3>
+            <div class="session-id" id="session-display">未开始 · 发送消息以创建会话</div>
+          </div>
+          <button class="btn-secondary" style="padding:6px 14px;font-size:0.8rem" onclick="newSession()">新会话</button>
+        </div>
+        <div class="chat-messages" id="chat-messages">
+          <div class="msg assistant">
+            <div class="msg-bubble">👋 你好！我是你的 AI 营养师助手。告诉我你的饮食偏好，我会根据当前天气和时令食材，为你制定一份科学合理的一周食谱。\n\n你可以这样问我：\n• "帮我生成一周减脂食谱"\n• "我不吃海鲜，帮我搭配"\n• "天冷了推荐点暖身的菜"</div>
+            <div class="msg-time">系统消息</div>
+          </div>
+        </div>
+        <div class="chat-input-area">
+          <textarea class="chat-input" id="chat-input" rows="2" placeholder="输入消息... (Ctrl+Enter 发送)"></textarea>
+          <button class="chat-send" id="chat-send-btn" onclick="sendChat()">➤</button>
+        </div>
+      </div>
+      <div class="chat-sidebar">
+        <div class="sidebar-card">
+          <h4>🏙️ 城市设置</h4>
+          <input class="city-input" id="city-input" type="text" value="北京" placeholder="输入城市名称" />
+        </div>
+        <div class="sidebar-card">
+          <h4>⚡ 快捷问题</h4>
+          <div class="quick-questions">
+            <button class="quick-q" onclick="sendQuick('帮我生成一份科学合理的一周食谱')">📋 生成一周食谱</button>
+            <button class="quick-q" onclick="sendQuick('根据本周天气推荐适合的菜品')">🌤️ 天气饮食建议</button>
+            <button class="quick-q" onclick="sendQuick('推荐一些当季性价比高的食材')">🥦 当季食材推荐</button>
+            <button class="quick-q" onclick="sendQuick('我想减脂，帮我设计高蛋白低碳水的食谱')">💪 减脂食谱</button>
+            <button class="quick-q" onclick="sendQuick('我不吃辣，也不吃海鲜，帮我规划一周')">🚫 特殊忌口</button>
+          </div>
+        </div>
+        <div class="sidebar-card" id="context-preview" style="display:none">
+          <h4>🌡️ 当前上下文</h4>
+          <div id="context-preview-content" style="font-size:0.8rem;color:var(--text-secondary)"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 生成食谱 ===== -->
+  <div class="page" id="page-generate">
+    <div class="section-title">📋 一键生成专属食谱 <span class="badge">POST /api/meal/generate</span></div>
+    <div class="generate-form">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">🏙️ 城市（用于天气参考）</label>
+          <input class="form-input" id="gen-city" type="text" value="北京" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">💰 预算等级</label>
+          <select class="form-select" id="gen-budget">
+            <option value="low">经济实惠</option>
+            <option value="medium" selected>中等</option>
+            <option value="high">不限预算</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">🎯 健康目标</label>
+          <select class="form-select" id="gen-goal">
+            <option value="">不限</option>
+            <option value="减脂">减脂</option>
+            <option value="增肌">增肌</option>
+            <option value="养生">养生</option>
+            <option value="控糖">控糖</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">✍️ 饮食偏好（可选）</label>
+          <input class="form-input" id="gen-pref" type="text" placeholder="如: 清淡,少油,不辣" />
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:20px">
+        <label class="form-label">🚫 过敏 / 忌口食材</label>
+        <div class="tag-selector" id="allergy-tags">
+          <button class="tag-btn" onclick="toggleTag(this)">海鲜</button>
+          <button class="tag-btn" onclick="toggleTag(this)">花生</button>
+          <button class="tag-btn" onclick="toggleTag(this)">乳制品</button>
+          <button class="tag-btn" onclick="toggleTag(this)">辣椒</button>
+          <button class="tag-btn" onclick="toggleTag(this)">葱蒜</button>
+          <button class="tag-btn" onclick="toggleTag(this)">猪肉</button>
+          <button class="tag-btn" onclick="toggleTag(this)">牛羊肉</button>
+          <button class="tag-btn" onclick="toggleTag(this)">鸡蛋</button>
+        </div>
+      </div>
+      <button class="btn-primary" onclick="generateMeal()" id="gen-btn">🚀 开始生成</button>
+      <span id="gen-loading" style="margin-left:16px;display:none">
+        <span class="loading"><span class="spinner"></span>AI 正在思考中，请稍候（约 10-30 秒）...</span>
+      </span>
+    </div>
+
+    <div class="result-area" id="gen-result">
+      <div class="result-meta" id="gen-meta"></div>
+      <div id="gen-content"></div>
+    </div>
+  </div>
+
+  <!-- ===== 天气 & 食材 ===== -->
+  <div class="page" id="page-context">
+    <div style="display:flex;gap:16px;align-items:center;margin-bottom:24px;flex-wrap:wrap">
+      <div class="section-title" style="margin-bottom:0">🌤️ 天气 & 食材</div>
+      <input class="city-input" id="ctx-city" type="text" value="北京" placeholder="城市" style="width:120px" />
+      <button class="btn-primary" style="padding:8px 20px;font-size:0.875rem" onclick="loadContext()">刷新数据</button>
+    </div>
+
+    <div class="section-title" style="font-size:1rem;margin-bottom:12px">📅 未来 7 天天气</div>
+    <div id="weather-grid" style="margin-bottom:32px">
+      <div class="loading"><span class="spinner"></span>加载中...</div>
+    </div>
+
+    <div class="grid grid-2">
+      <div>
+        <div class="section-title" style="font-size:1rem;margin-bottom:12px">🥦 当季蔬菜推荐</div>
+        <div class="ingredient-list" id="ingredient-veg">
+          <div class="loading"><span class="spinner"></span>加载中...</div>
+        </div>
+      </div>
+      <div>
+        <div class="section-title" style="font-size:1rem;margin-bottom:12px">🥩 肉类参考价格</div>
+        <div class="ingredient-list" id="ingredient-meat">
+          <div class="loading"><span class="spinner"></span>加载中...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== API 文档 ===== -->
+  <div class="page" id="page-api">
+    <div class="section-title">📡 API 接口文档</div>
+    <p style="color:var(--text-secondary);font-size:0.875rem;margin-bottom:24px">
+      Base URL：<code style="background:var(--bg-card2);padding:2px 8px;border-radius:4px">http://localhost:8000</code>
+      &nbsp;&nbsp;交互文档：<a href="http://localhost:8000/docs" target="_blank" style="color:var(--accent)">Swagger UI ↗</a>
+    </p>
+
+    <div id="api-list"></div>
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<script>
+  const API_BASE = 'http://localhost:8000';
+  let sessionId = null;
+  let isTyping = false;
+
+  // ===== 页面切换 =====
+  function showPage(name, btn) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+    document.getElementById('page-' + name).classList.add('active');
+    if (btn) btn.classList.add('active');
+    if (name === 'context') loadContext();
+    if (name === 'api') renderApiDocs();
+  }
+
+  // ===== 健康检查 =====
+  async function checkHealth() {
+    try {
+      const r = await fetch(API_BASE + '/api/chat/health', { signal: AbortSignal.timeout(3000) });
+      if (r.ok) {
+        document.getElementById('status-dot').style.background = 'var(--accent2)';
+        document.getElementById('status-text').textContent = '后端在线';
+      } else throw new Error();
+    } catch {
+      document.getElementById('status-dot').style.background = 'var(--accent3)';
+      document.getElementById('status-text').textContent = '后端离线';
+    }
+  }
+  checkHealth();
+  setInterval(checkHealth, 30000);
+
+  // ===== Toast =====
+  function showToast(msg, type = 'info') {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'show ' + type;
+    setTimeout(() => t.className = '', 3000);
+  }
+
+  // ===== 聊天 =====
+  function newSession() {
+    sessionId = null;
+    document.getElementById('session-display').textContent = '未开始 · 发送消息以创建新会话';
+    document.getElementById('chat-messages').innerHTML = `
+      <div class="msg assistant">
+        <div class="msg-bubble">👋 新会话已创建！请告诉我你的饮食需求。</div>
+        <div class="msg-time">系统消息</div>
+      </div>`;
+  }
+
+  document.getElementById('chat-input').addEventListener('keydown', e => {
+    if (e.ctrlKey && e.key === 'Enter') sendChat();
+  });
+
+  function sendQuick(text) {
+    document.getElementById('chat-input').value = text;
+    showPage('chat', document.getElementById('nav-chat'));
+    sendChat();
+  }
+
+  async function sendChat() {
+    const input = document.getElementById('chat-input');
+    const msg = input.value.trim();
+    if (!msg || isTyping) return;
+    input.value = '';
+    appendMsg('user', msg);
+    showTyping();
+    isTyping = true;
+    document.getElementById('chat-send-btn').disabled = true;
+    const city = document.getElementById('city-input').value || '北京';
+    try {
+      const body = { message: msg, city };
+      if (sessionId) body.session_id = sessionId;
+      const r = await fetch(API_BASE + '/api/chat/', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      removeTyping();
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const data = await r.json();
+      sessionId = data.session_id;
+      document.getElementById('session-display').textContent = `会话 ${sessionId.slice(0,8)}... · ${data.action_type}`;
+      appendMsg('assistant', data.message, data.timestamp);
+      if (data.context) {
+        const preview = document.getElementById('context-preview');
+        const content = document.getElementById('context-preview-content');
+        preview.style.display = 'block';
+        content.innerHTML = `城市：${data.context.weather_city}<br>季节：${data.context.season}`;
+      }
+    } catch (e) {
+      removeTyping();
+      appendMsg('assistant', '❌ 请求失败：' + e.message + '\n\n请检查后端服务是否正常启动（python -m uvicorn app.main:app --reload）');
+    } finally {
+      isTyping = false;
+      document.getElementById('chat-send-btn').disabled = false;
+    }
+  }
+
+  function appendMsg(role, text, time) {
+    const container = document.getElementById('chat-messages');
+    const div = document.createElement('div');
+    div.className = 'msg ' + role;
+    const ts = time ? new Date(time).toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit' }) : '';
+    div.innerHTML = `<div class="msg-bubble">${escHtml(text)}</div><div class="msg-time">${ts}</div>`;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  function showTyping() {
+    const container = document.getElementById('chat-messages');
+    const div = document.createElement('div');
+    div.className = 'msg assistant'; div.id = 'typing-indicator';
+    div.innerHTML = `<div class="msg-bubble" style="padding:8px 16px"><div class="typing-indicator"><span></span><span></span><span></span></div></div>`;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+  }
+  function removeTyping() {
+    const el = document.getElementById('typing-indicator');
+    if (el) el.remove();
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+  }
+
+  // ===== 食谱生成 =====
+  function toggleTag(btn) { btn.classList.toggle('selected'); }
+
+  async function generateMeal() {
+    const btn = document.getElementById('gen-btn');
+    const loading = document.getElementById('gen-loading');
+    const result = document.getElementById('gen-result');
+    btn.disabled = true; loading.style.display = 'inline-flex'; result.classList.remove('show');
+
+    const allergies = [...document.querySelectorAll('#allergy-tags .tag-btn.selected')].map(b => b.textContent);
+    const body = {
+      city: document.getElementById('gen-city').value || '北京',
+      budget: document.getElementById('gen-budget').value,
+      health_goal: document.getElementById('gen-goal').value || undefined,
+      preferences: document.getElementById('gen-pref').value || undefined,
+      allergies: allergies.length ? allergies : undefined
+    };
+
+    try {
+      const r = await fetch(API_BASE + '/api/meal/generate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const data = await r.json();
+      const meta = document.getElementById('gen-meta');
+      meta.innerHTML = `
+        <div class="meta-item">🌤️ 天气概况 <span class="meta-val">${data.weather_summary || '未获取'}</span></div>
+        <div class="meta-item">🥦 食材提示 <span class="meta-val">${data.ingredient_tips || '未获取'}</span></div>
+        <div class="meta-item">🕐 生成时间 <span class="meta-val">${new Date(data.generated_at).toLocaleString('zh-CN')}</span></div>
+      `;
+      document.getElementById('gen-content').innerHTML = '<pre style="white-space:pre-wrap;background:none;padding:0;color:var(--text-primary)">' + escHtml(data.weekly_plan) + '</pre>';
+      result.classList.add('show');
+      showToast('✅ 食谱生成成功！', 'success');
+    } catch (e) {
+      showToast('❌ 生成失败：' + e.message, 'error');
+    } finally {
+      btn.disabled = false; loading.style.display = 'none';
+    }
+  }
+
+  // ===== 天气 & 食材 =====
+  async function loadContext() {
+    const city = document.getElementById('ctx-city').value || '北京';
+    loadWeather(city);
+    loadIngredients();
+  }
+
+  async function loadWeather(city) {
+    const grid = document.getElementById('weather-grid');
+    grid.innerHTML = '<div class="loading"><span class="spinner"></span>加载中...</div>';
+    try {
+      const r = await fetch(API_BASE + `/api/meal/weather?city=${encodeURIComponent(city)}&days=7`);
+      if (!r.ok) throw new Error();
+      const data = await r.json();
+      if (data.error) throw new Error(data.error);
+      grid.innerHTML = data.forecasts.map(f => `
+        <div class="weather-card">
+          <div class="date">${f.date.slice(5)}</div>
+          <div class="icon">${weatherIcon(f.day_weather)}</div>
+          <div class="temp">${f.temp_min}~${f.temp_max}°C</div>
+          <div class="desc">${f.day_weather}</div>
+        </div>`).join('');
+    } catch {
+      grid.innerHTML = '<span style="color:var(--text-secondary);font-size:0.875rem">❌ 天气数据加载失败（需配置 QWEATHER_API_KEY 或检查网络）</span>';
+    }
+  }
+
+  function weatherIcon(desc) {
+    if (!desc) return '🌡️';
+    if (desc.includes('雪')) return '❄️';
+    if (desc.includes('雨')) return '🌧️';
+    if (desc.includes('云') || desc.includes('阴')) return '⛅';
+    if (desc.includes('晴')) return '☀️';
+    return '🌤️';
+  }
+
+  async function loadIngredients() {
+    const vegEl = document.getElementById('ingredient-veg');
+    const meatEl = document.getElementById('ingredient-meat');
+    vegEl.innerHTML = '<div class="loading"><span class="spinner"></span>加载中...</div>';
+    meatEl.innerHTML = '<div class="loading"><span class="spinner"></span>加载中...</div>';
+    try {
+      const [vegR, meatR] = await Promise.all([
+        fetch(API_BASE + '/api/meal/ingredients?category=vegetable&budget_friendly=true'),
+        fetch(API_BASE + '/api/meal/ingredients?category=meat')
+      ]);
+      const veg = await vegR.json();
+      const meat = await meatR.json();
+      vegEl.innerHTML = renderIngredients(veg.prices || []);
+      meatEl.innerHTML = renderIngredients(meat.prices || []);
+    } catch {
+      vegEl.innerHTML = meatEl.innerHTML = '<span style="color:var(--text-secondary);font-size:0.875rem">❌ 加载失败</span>';
+    }
+  }
+
+  function renderIngredients(prices) {
+    if (!prices.length) return '<span style="color:var(--text-secondary)">暂无数据</span>';
+    return prices.map(p => `
+      <div class="ingredient-tag">
+        <span>${p.name}</span>
+        <span class="price">${p.price}元/斤</span>
+        <span class="trend">${p.price_trend}</span>
+      </div>`).join('');
+  }
+
+  // ===== API 文档 =====
+  const API_DOCS = [
+    { method:'GET', path:'/api/chat/health', desc:'健康检查', body:null, sample:'{"status":"healthy","timestamp":"...","version":"0.1.0"}' },
+    { method:'GET', path:'/api/chat/context?city=北京', desc:'获取天气+食材上下文', body:null, sample:'{"weather":{...},"ingredients":{...}}' },
+    { method:'POST', path:'/api/chat/', desc:'与 Agent 对话', body:'{\n  "message": "帮我生成一周食谱",\n  "session_id": null,\n  "city": "北京"\n}', sample:'{"session_id":"...","message":"...","action_type":"final","timestamp":"..."}' },
+    { method:'GET', path:'/api/chat/sessions', desc:'列出所有会话', body:null, sample:'[{"session_id":"...","message_count":3,...}]' },
+    { method:'DELETE', path:'/api/chat/sessions/{session_id}', desc:'删除指定会话', body:null, sample:'{"status":"deleted","session_id":"..."}' },
+    { method:'GET', path:'/api/meal/weekly-meal', desc:'获取静态示例食谱', body:null, sample:'{"week":{...}}' },
+    { method:'POST', path:'/api/meal/generate', desc:'动态生成一周食谱（Agent）', body:'{\n  "preferences": "清淡,低脂",\n  "allergies": ["海鲜"],\n  "city": "北京",\n  "budget": "medium",\n  "health_goal": "减脂"\n}', sample:'{"weekly_plan":"...","weather_summary":"...","ingredient_tips":"..."}' },
+    { method:'GET', path:'/api/meal/ingredients?category=vegetable', desc:'获取当季食材价格', body:null, sample:'{"prices":[{"name":"黄瓜","price":1.8,...}],"season":"冬季"}' },
+    { method:'GET', path:'/api/meal/weather?city=北京&days=7', desc:'获取天气预报', body:null, sample:'{"city":"北京","forecasts":[...],"source":"..."}' },
+  ];
+
+  function renderApiDocs() {
+    const container = document.getElementById('api-list');
+    if (container.innerHTML) return;
+    container.innerHTML = API_DOCS.map((ep, i) => `
+      <div class="api-endpoint">
+        <div class="api-header" onclick="toggleApi(${i})">
+          <span class="method ${ep.method}">${ep.method}</span>
+          <span class="api-path">${ep.path}</span>
+          <span class="api-desc">${ep.desc}</span>
+        </div>
+        <div class="api-body" id="api-body-${i}">
+          ${ep.body ? `<div style="margin-top:10px;font-size:0.8rem;color:var(--text-secondary)">请求体：</div><pre>${ep.body}</pre>` : ''}
+          <div style="margin-top:10px;font-size:0.8rem;color:var(--text-secondary)">响应示例：</div>
+          <pre>${ep.sample}</pre>
+          <div class="api-tryit">
+            <button class="api-try-btn" onclick="tryApi(${i})">▶ 立即测试</button>
+            <span id="api-loading-${i}" style="display:none"><span class="loading"><span class="spinner"></span>请求中...</span></span>
+          </div>
+          <pre id="api-result-${i}" style="display:none;margin-top:10px;color:#79c0ff"></pre>
+        </div>
+      </div>`).join('');
+  }
+
+  function toggleApi(i) {
+    const body = document.getElementById('api-body-' + i);
+    body.classList.toggle('open');
+  }
+
+  async function tryApi(i) {
+    const ep = API_DOCS[i];
+    const loading = document.getElementById('api-loading-' + i);
+    const result = document.getElementById('api-result-' + i);
+    loading.style.display = 'inline-flex'; result.style.display = 'none';
+    try {
+      const opts = { method: ep.method, headers: {} };
+      if (ep.body) { opts.headers['Content-Type'] = 'application/json'; opts.body = ep.body; }
+      const url = API_BASE + ep.path.replace('{session_id}', sessionId || 'test-id');
+      const r = await fetch(url, opts);
+      const data = await r.json();
+      result.textContent = JSON.stringify(data, null, 2);
+      result.style.display = 'block';
+    } catch (e) {
+      result.textContent = '错误：' + e.message;
+      result.style.display = 'block';
+    } finally {
+      loading.style.display = 'none';
+    }
+  }
+</script>
+</body>
+</html>

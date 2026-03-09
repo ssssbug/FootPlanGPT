@@ -83,12 +83,12 @@ async def generate_weekly_meal(request: MealGenerateRequest):
         # 导入 Agent 和工具
         import sys
         import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        
-        from agent.smart_menu_agent import SmartMenuAgent
-        from llm.select_llm import LLM
-        from memory.WorkingMemory import WorkingMemory
-        from memory.baseMemory import MemoryConfig
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+        from app.agent.smart_menu_agent import SmartMenuAgent
+        from app.llm.select_llm import LLM
+        from app.memory.WorkingMemory import WorkingMemory
+        from app.memory.baseMemory import MemoryConfig
         
         # 构建用户请求
         user_prompt_parts = ["请为我生成一份科学合理的一周食谱"]
@@ -118,7 +118,7 @@ async def generate_weekly_meal(request: MealGenerateRequest):
         weather_summary = None
         ingredient_tips = None
         try:
-            from tools import get_weather, get_seasonal_ingredients
+            from app.tools import get_weather, get_seasonal_ingredients
             
             weather_data = get_weather(agent.user_city, days=3)
             if weather_data.get("forecasts"):
@@ -155,7 +155,7 @@ async def get_seasonal_ingredients(
     基于当前月份返回时令食材及价格
     """
     try:
-        from tools import get_ingredient_prices
+        from app.tools import get_ingredient_prices
         
         result = get_ingredient_prices(
             category=category or "all",
@@ -177,7 +177,7 @@ async def get_weather_forecast(
     返回指定城市的天气预报及饮食建议
     """
     try:
-        from tools import get_weather
+        from app.tools import get_weather
         
         result = get_weather(city, days=days)
         return result

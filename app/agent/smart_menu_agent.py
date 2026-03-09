@@ -10,24 +10,24 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 from sklearn.feature_extraction.text import TfidfVectorizer
 
-from agent.agent import Agent
-from agent.baseAgent import BaseAgent
-from llm.select_llm import LLM
-from memory.WorkingMemory import WorkingMemory
-from memory.EpisodicMemory import EpisodicMemory # Added EpisodicMemory
-from memory.baseMemory import MemoryItem, MemoryConfig
-from memory.Semantic import SemanticMemory, Entity, Relation # Import Entity/Relation
-from message.message import Message
-from prompt.default_prompt import DEFAULT_REACT_TEMPLATE, INTENT_PROMPT, MEMORY_EXTRACTION_PROMPT, REFLECTION_PROMPT # Added Prompt
-from schemas.AgentState import AgentState
-from utils.text_process import SessionUserId
-from utils.text_process import TextProcess
+from app.agent.agent import Agent
+from app.agent.baseAgent import BaseAgent
+from app.llm.select_llm import LLM
+from app.memory.WorkingMemory import WorkingMemory
+from app.memory.EpisodicMemory import EpisodicMemory # Added EpisodicMemory
+from app.memory.baseMemory import MemoryItem, MemoryConfig
+from app.memory.Semantic import SemanticMemory, Entity, Relation # Import Entity/Relation
+from app.message.message import Message
+from app.prompt.default_prompt import DEFAULT_REACT_TEMPLATE, INTENT_PROMPT, MEMORY_EXTRACTION_PROMPT, REFLECTION_PROMPT # Added Prompt
+from app.schemas.AgentState import AgentState
+from app.utils.text_process import SessionUserId
+from app.utils.text_process import TextProcess
 #环境加载，加载llm
 load_dotenv()
 
 # RAG Pipeline import
 try:
-    from services.rag_pipeline import create_rag_pipeline
+    from app.services.rag_pipeline import create_rag_pipeline
     RAG_AVAILABLE = True
 except ImportError:
     RAG_AVAILABLE = False
@@ -364,12 +364,16 @@ class SmartMenuAgent(BaseAgent):
 
         # 1.构建提示词
         if workmemories is None:
-            history_str='None'
+            history_str = 'None'
         else:
-            intent_list = []
-            for intent in workmemories:
-                 intent_list.extend(intent.get("intents", []))
-            history_str = "\n".join(intent_list)
+            history_parts = []
+            for mem in workmemories:
+                # MemoryItem 对象有 content 属性，也可能是 dict
+                if hasattr(mem, "content"):
+                    history_parts.append(mem.content)
+                elif isinstance(mem, dict):
+                    history_parts.append(mem.get("content", str(mem)))
+            history_str = "\n".join(history_parts) if history_parts else 'None'
         
         # --- 语义记忆增强 ---
         # 尝试查找输入中的实体并获取关联信息
@@ -461,21 +465,23 @@ class SmartMenuAgent(BaseAgent):
             thought,action  = self._parse_output(response)
 
             #检查状态决定下一步
-            if action.lower()=="finish":
-
-                self.add_message(Message(content=input_text,role="user"))
-                self.add_message(Message(content=thought,role="assistant"))
+            if action.lower() in ("finish", "final"):
+                # 大模型认为信息已足够，返回最终答案
+                self.add_message(Message(content=input_text, role="user"))
+                self.add_message(Message(content=thought, role="assistant"))
                 # Trigger Learning
                 self.learn_from_interaction(input_text, thought)
                 return thought
-            elif action.lower()=="continue":
-                self.add_message(Message(content=input_text,role="user"))
-                self.add_message(Message(content=thought,role="assistant"))
-                # Trigger Learning
-                self.learn_from_interaction(input_text, thought)
-                return thought
+            elif action.lower() == "continue":
+                # 大模型需要更多信息，将思考结果加入历史并继续
+                self.current_history.append(f"Assistant (thinking): {thought}")
+                print(f"[Agent 思考中] {thought}")
             else:
-                print("未能正确解析到数据，请检查提示词要求")
+                print(f"[Warning] 未能识别的 action 类型: '{action}'，默认视为 final")
+                self.add_message(Message(content=input_text, role="user"))
+                self.add_message(Message(content=thought, role="assistant"))
+                self.learn_from_interaction(input_text, thought)
+                return thought
 
             print(thought)
 
@@ -492,14 +498,25 @@ class SmartMenuAgent(BaseAgent):
 
 
 
-    def _parse_output(self,response):
+    def _parse_output(self, response):
         try:
-            data = json.loads(response)
-            action = data.get("type", "continue") # Default to continue if missing
-            thought = data.get("message", response) # Default to raw response
-            return thought,action
+            # 清洗可能带有 markdown 标记的 JSON
+            json_str = response.strip()
+            if json_str.startswith("```json"):
+                json_str = json_str[7:]
+                if json_str.endswith("```"):
+                    json_str = json_str[:-3]
+            elif json_str.startswith("```"):
+                json_str = json_str[3:]
+                if json_str.endswith("```"):
+                    json_str = json_str[:-3]
+            data = json.loads(json_str.strip())
+            action = data.get("type", "final")   # 无 type 时默认 final
+            thought = data.get("message", response)
+            return thought, action
         except json.JSONDecodeError:
-            return response, "continue" # Fallback for non-JSON response
+            # 非 JSON 回复视为最终答案，直接返回，避免无限追问
+            return response, "final"
 
 
     def cli(self):
@@ -578,7 +595,7 @@ class SmartMenuAgent(BaseAgent):
 
 if __name__ == "__main__":
     #回答推理llm
-    llm = LLM(model="gpt-5-mini",provider="chatanywhere")
+    llm = LLM(model="gpt-4o-mini",provider="chatanywhere")
     agent = SmartMenuAgent(llm)
     #用户意图抽取llm
 

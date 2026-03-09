@@ -15,12 +15,12 @@ import uuid
 # 导入 Agent
 import sys
 import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from agent.smart_menu_agent import SmartMenuAgent
-from llm.select_llm import LLM
-from memory.WorkingMemory import WorkingMemory
-from memory.baseMemory import MemoryConfig
+from app.agent.smart_menu_agent import SmartMenuAgent
+from app.llm.select_llm import LLM
+from app.memory.WorkingMemory import WorkingMemory
+from app.memory.baseMemory import MemoryConfig
 
 router = APIRouter(
     prefix="/chat",

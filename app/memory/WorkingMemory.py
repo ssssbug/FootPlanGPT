@@ -2,9 +2,7 @@ import heapq
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
 
-from qdrant_client.http.models import DecayParamsExpression
-
-from baseMemory import BaseMemory, MemoryConfig, MemoryItem
+from app.memory.baseMemory import BaseMemory, MemoryConfig, MemoryItem
 
 
 class WorkingMemory(BaseMemory):
@@ -187,8 +185,8 @@ class WorkingMemory(BaseMemory):
             "forgotten_count":0,
             "total_count":len(self.memories),
             "max_capacity": self.max_capacity,
-            "max_age_minutes": self.max_age_minutes,
-            "session_duration_minutes": (datetime.datetime.now() - self.session_start).total_seconds() / 60,
+            "max_age_minutes": self.max_save_minutes,
+            "session_duration_minutes": (datetime.now() - self.session_start).total_seconds() / 60,
             "avg_importance": sum(m.importance for m in active_memories) / len(
                 active_memories) if active_memories else 0.0,
             "capacity_usage": len(active_memories) / self.max_capacity if self.max_capacity > 0 else 0.0,
@@ -260,27 +258,26 @@ class WorkingMemory(BaseMemory):
         min_impotance=1.0
         global_min_importance = 1.0
         for m in self.memories:
-            if m.timestamp<cutoff:
-                if m.impotance<=min_impotance:
-                    min_impotance=m.impotance
+            if m.timestamp < cutoff:
+                if m.importance <= min_impotance:
+                    min_impotance = m.importance
             else:
-                if m.impotance<=global_min_importance:
-                    global_min_importance=m.impotance
+                if m.importance <= global_min_importance:
+                    global_min_importance = m.importance
 
-        #保存重要性在min_importance和global_min_importance两侧的记忆
+        # 保存重要性在 min_importance 和 global_min_importance 两侧的记忆
         keep_memory = []
         for m in self.memories:
-            if global_min_importance<=min_impotance:
-                if m.importance<=global_min_importance or m.impotance>=min_impotance:
+            if global_min_importance <= min_impotance:
+                if m.importance <= global_min_importance or m.importance >= min_impotance:
                     keep_memory.append(m)
                 else:
-                    removed_token_sum+=len(m.content.split())
-
+                    removed_token_sum += len(m.content.split())
             else:
-                if m.impotance>=global_min_importance or m.impotance<=min_impotance:
+                if m.importance >= global_min_importance or m.importance <= min_impotance:
                     keep_memory.append(m)
                 else:
-                    removed_token_sum+=len(m.content.split())
+                    removed_token_sum += len(m.content.split())
         #覆盖列表与token
         self.memories=keep_memory
         self.current_tokens=max(0,self.current_tokens-removed_token_sum)
@@ -327,8 +324,9 @@ class WorkingMemory(BaseMemory):
         lowest_priority = float('inf')
         lowest_memory = None
         for mem in self.memories:
-            if mem.priority<lowest_priority:
-                lowest_priority = mem.priority
+            pri = self.calculate_priority(mem)
+            if pri < lowest_priority:
+                lowest_priority = pri
                 lowest_memory = mem
         if lowest_memory:
             self.remove(lowest_memory.id)

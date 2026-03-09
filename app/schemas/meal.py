@@ -16,3 +16,10 @@ class DailyMeal(BaseModel):
 class WeeklyMenu(BaseModel):
     menu:List[DailyMeal]=Field(...,description="一周的完整食谱")
 
+
+class WeeklyMealResponse(BaseModel):
+    """一周食谱响应"""
+    week: Dict[str, DailyMeal] = Field(..., description="按日期排列的食谱")
+    generated_at: str = Field(..., description="生成时间")
+    source: str = Field("static", description="数据来源")
+

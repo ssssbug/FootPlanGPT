@@ -363,7 +363,7 @@ result = get_seasonal_ingredients()
 
 MCP 工具已集成到 `SmartMenuAgent` 中：
 
-1.  **初始化**: Agent 启动时检测 MCP 工具可用性
+1.  **初始化**: Agent 启动时检测 MCP 工具可用性 
 2.  **缓存机制**: 天气数据缓存 1 小时，避免频繁调用
 3.  **Prompt 注入**: 在 ReAct 模板中新增 `{weather_context}` 和 `{ingredient_context}` 占位符
 4.  **上下文方法**:

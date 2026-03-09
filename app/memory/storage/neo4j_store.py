@@ -1,6 +1,7 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from datetime import datetime
 import logging
+import os
 
 try:
     from neo4j import GraphDatabase
@@ -16,10 +17,10 @@ logger = logging.getLogger(__name__)
 class Neo4jGraphStore:
     """Neo4j图数据库存储实现"""
 
-    def __init__(self, uri: str = "bolt://localhost:7687",
-                 username: str = "neo4j",
-                 password: str = "hello-agents-password",
-                 database_name: str = "neo4j",
+    def __init__(self, uri: Optional[str]=None,
+                 username: Optional[str]=None,
+                 password: Optional[str]=None,
+                 database_name: Optional[str]=None,
                  max_connection_pool_size: int = 3600,
                  max_connection_lifetime: int = 50,
                  connection_acquisition_timeout: int = 60,
@@ -39,10 +40,10 @@ class Neo4jGraphStore:
         if not NEO4J_AVAILABLE:
             raise ImportError("Neo4j图数据库存储需要安装 pip install neo4j")
         
-        self.uri = uri
-        self.username = username
-        self.password = password
-        self.database = database_name
+        self.uri = uri or os.getenv("NEO4J_URI")
+        self.username = username or os.getenv("NEO4J_USERNAME")
+        self.password = password or os.getenv("NEO4J_PASSWORD")
+        self.database = database_name or os.getenv("NEO4J_DATABASE")
 
         # 初始化驱动
         self.driver = None
@@ -429,10 +430,10 @@ class Neo4jConnectionManager:
     
     @classmethod
     def get_instance(cls, 
-                     uri: str = None, 
-                     username: str = "neo4j", 
-                     password: str = "hello-agents-password",
-                     database_name: str = "neo4j") -> 'Neo4jGraphStore':
+                     uri: Optional[str]=None, 
+                     username: Optional[str]=None, 
+                     password: Optional[str]=None,
+                     database_name: Optional[str]=None) -> 'Neo4jGraphStore':
         import threading
         if cls._lock is None:
             cls._lock = threading.Lock()
@@ -441,10 +442,10 @@ class Neo4jConnectionManager:
             with cls._lock:
                 if cls._instance is None:
                     import os
-                    final_uri = uri or os.getenv("NEO4J_URI", "bolt://localhost:7687")
-                    final_user = username or os.getenv("NEO4J_USERNAME", "neo4j")
-                    final_pwd = password or os.getenv("NEO4J_PASSWORD", "hello-agents-password")
-                    final_db = database_name or os.getenv("NEO4J_DATABASE", "neo4j")
+                    final_uri = uri or os.getenv("NEO4J_URI")
+                    final_user = username or os.getenv("NEO4J_USERNAME")
+                    final_pwd = password or os.getenv("NEO4J_PASSWORD")
+                    final_db = database_name or os.getenv("NEO4J_DATABASE")
                     
                     try:
                         cls._instance = Neo4jGraphStore(

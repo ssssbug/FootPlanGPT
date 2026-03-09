@@ -134,7 +134,7 @@ class LLM:
 
 #测试
 if __name__ == "__main__":
-    my_llm = LLM(model="gpt-5-mini",provider="chatanywhere")
+    my_llm = LLM(model="gpt-4o-mini",provider="chatanywhere")
     message=[{"role":"user","content":"请你介绍一下自己"}]
     my_llm.stream_invoke(messages=message)
 

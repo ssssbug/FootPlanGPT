@@ -14,14 +14,19 @@
 """
 
 
-from requests.api import request
-from typing import Union
-from transformers import AutoModel,AutoTokenizer
-import torch
-from sentence_transformers import SentenceTransformer
+import threading
+from typing import Union, List, Optional, Any
 import os
 import numpy as np
-from typing import List, Optional, Any
+try:
+    from transformers import AutoModel, AutoTokenizer
+    import torch
+except ImportError:
+    AutoModel = AutoTokenizer = torch = None
+try:
+    from sentence_transformers import SentenceTransformer
+except ImportError:
+    SentenceTransformer = None
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 class EmbeddingModel:
@@ -61,13 +66,18 @@ class  LocalTransformerEmbedding(EmbeddingModel):
       self._hf_model = None 
 
     #使用sentence-transformers
-
+    if SentenceTransformer is None:
+      raise ImportError("sentence-transformers 未安装")
     try:
       self._st_model = SentenceTransformer(
         "sentence-transformers/all-MiniLM-L6-v2"
       )
       test_vec = self._st_model.encode("test_text")
-      self._dimension = int(test_vec.shape[1])
+      # encode 单条返回 1-D array，shape 为 (dim,)
+      if hasattr(test_vec, "shape"):
+        self._dimension = test_vec.shape[-1]
+      else:
+        self._dimension = len(test_vec)
       self._backend = "st"
       return
     except Exception as e:

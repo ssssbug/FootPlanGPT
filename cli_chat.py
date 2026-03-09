@@ -1,7 +1,6 @@
 import sys
 import os
 from pathlib import Path
-
 # Add 'app' directory to sys.path so that modules in app/ can import each other
 # e.g. 'from agent.agent import Agent' will work because 'agent' is found inside 'app'
 current_dir = Path(__file__).parent.absolute()

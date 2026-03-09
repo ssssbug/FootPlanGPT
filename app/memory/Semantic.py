@@ -13,7 +13,7 @@ import numpy as np
 
 from app.memory.baseMemory import MemoryConfig, MemoryItem
 from app.model.embedder import get_text_embedder
-from app.utils.milvus_store import MilvusStore
+from app.utils.milvus_store import MilvusVectorStore
 from app.memory.storage.neo4j_store import Neo4jGraphStore
 
 # 配置日志

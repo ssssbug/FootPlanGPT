@@ -42,4 +42,7 @@ async def root():
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="localhost", port=8000)
+    import sys, os
+    # 以 app/ 为工作目录运行，保证内部模块导入正确
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
