@@ -65,7 +65,7 @@ class SmartMenuAgent(BaseAgent):
                  llm:Agent,
                  system_prompt:Optional[str]=None,
                  config:Optional[str]=None,
-                 max_steps:int=20,
+                 max_steps:int=30,
                  custom_prompt:Optional[str]=None
                  ):
         super().__init__(name="",llm=llm,system_prompt=system_prompt,Config=config)
@@ -513,6 +513,11 @@ class SmartMenuAgent(BaseAgent):
             data = json.loads(json_str.strip())
             action = data.get("type", "final")   # 无 type 时默认 final
             thought = data.get("message", response)
+            # 确保 thought 是字符串，不是字典
+            if isinstance(thought, dict):
+                thought = json.dumps(thought, ensure_ascii=False, indent=2)
+            elif not isinstance(thought, str):
+                thought = str(thought)
             return thought, action
         except json.JSONDecodeError:
             # 非 JSON 回复视为最终答案，直接返回，避免无限追问
