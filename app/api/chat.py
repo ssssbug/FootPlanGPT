@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from app.agent.smart_menu_agent import SmartMenuAgent
 from app.llm.select_llm import LLM
 from app.memory.WorkingMemory import WorkingMemory
-from app.memory.baseMemory import MemoryConfig
+from app.memory.baseMemory import MemoryConfig, MemoryItem
 
 router = APIRouter(
     prefix="/chat",
@@ -197,6 +197,24 @@ async def chat(
             current_step=current_step,
             workmemories=agent.workmemory.memories if hasattr(agent, 'workmemory') else None
         )
+        
+        # ✅ Bug 修复：将本次对话存入 WorkingMemory，供下一轮 step() 使用
+        if hasattr(agent, 'workmemory'):
+            memory_content = f"User: {request.message}\nAssistant: {thought}"
+            agent.workmemory.add(MemoryItem(
+                id=str(uuid.uuid4()),
+                user_id=session_id,
+                content=memory_content,
+                keyword=[],
+                memory_type="working",
+                timestamp=datetime.now(),
+                importance=0.6,
+                metadata={"session_id": session_id, "type": "api_interaction"}
+            ))
+        
+        # ✅ Bug 修复：同步更新 current_history，保证两套历史机制一致
+        agent.current_history.append(f"User: {request.message}")
+        agent.current_history.append(f"Assistant: {thought}")
         
         # 触发学习
         agent.learn_from_interaction(request.message, thought)
